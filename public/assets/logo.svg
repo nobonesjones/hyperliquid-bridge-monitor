@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" version="1.1" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+ <g fill="currentColor" stroke="#1ce">
+  <path d="m200 150h300v50h-300z"/>
+  <path d="m250 200h200v50h-200z"/>
+  <path d="m300 250h100v50h-100z"/>
+  <path d="m350 300h50v50h-50z"/>
+  <path d="m500 150h50v50h-50z"/>
+  <path d="m550 200v100h50v-100z"/>
+  <path d="m600 300h50v50h-50z"/>
+  <path d="m650 350h50v50h-50z"/>
+  <path d="m400 400h50v50h-50z"/>
+ </g>
+</svg>

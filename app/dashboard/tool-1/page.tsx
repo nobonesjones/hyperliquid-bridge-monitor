@@ -1,10 +1,10 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import DashboardLayout from '@/components/layout/dashboard-layout'
-import DashboardContent from '@/components/dashboard/dashboard-content'
-import { DepositMonitor } from '@/components/deposit-monitor'
+import { BlockchainMonitorTest } from '@/components/blockchain-monitor-test'
+import PlaceholderPage from '@/components/placeholder-page'
 
-export default async function Dashboard() {
+export default async function Tool1Page() {
   const supabase = createServerComponentClient({ cookies })
   const {
     data: { user },
@@ -16,11 +16,12 @@ export default async function Dashboard() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <DepositMonitor />
+      <div className="container mx-auto py-6 w-full max-w-[1600px]">
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <BlockchainMonitorTest />
+          </div>
         </div>
-        <DashboardContent />
       </div>
     </DashboardLayout>
   )

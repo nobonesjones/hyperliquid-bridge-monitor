@@ -1,7 +1,8 @@
 import './globals.css'
-import Navbar from '../components/navbar'
 import { Bricolage_Grotesque } from 'next/font/google'
 import { cn } from '@/lib/utils'
+import { ThemeProvider } from '@/components/theme-provider'
+import RootLayoutNav from '@/components/layout/root-layout-nav'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,19 +28,24 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-
-
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body 
         className={cn(
-          'antialiased',
+          'antialiased min-h-screen bg-background font-sans',
           fontHeading.variable,
           fontBody.variable
         )}
       >
-        <Navbar />
-        <main>{children}</main>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <RootLayoutNav />
+          <main>{children}</main>
+        </ThemeProvider>
       </body>
     </html>
   )
