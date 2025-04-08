@@ -95,12 +95,12 @@ class BlockchainMonitor {
       ]);
 
       if (arbitrumTransfers.length > 0) {
-        // Add new transfers and keep last 100
-        this.transfers = [...arbitrumTransfers, ...this.transfers].slice(0, 100);
+        // Add new transfers and keep last 500
+        this.transfers = [...arbitrumTransfers, ...this.transfers].slice(0, 500);
       }
       if (ethereumTransfers.length > 0) {
-        // Add new transfers and keep last 100
-        this.transfers = [...ethereumTransfers, ...this.transfers].slice(0, 100);
+        // Add new transfers and keep last 500
+        this.transfers = [...ethereumTransfers, ...this.transfers].slice(0, 500);
       }
 
       return this.transfers;

@@ -192,10 +192,14 @@ export function DepositMonitor() {
                 <thead className="sticky top-0 bg-background">
                   <tr className="border-b">
                     <th className="p-2 text-left text-sm">Time</th>
-                    <th className="p-2 text-left text-sm">Coin</th>
+                    <th className="p-2 text-left text-sm">From</th>
                     <th className="p-2 text-left text-sm">Amount</th>
-                    <th className="p-2 text-left text-sm">USD Value</th>
-                    <th className="p-2 text-left text-sm">Wallet</th>
+                    <th className="p-2 text-left text-sm">Type</th>
+                    <th className="p-2 text-left text-sm">Token</th>
+                    <th className="p-2 text-left text-sm">30d PnL</th>
+                    <th className="p-2 text-left text-sm">Positions</th>
+                    <th className="p-2 text-left text-sm">Actions</th>
+                    <th className="p-2 text-left text-sm">Tx</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -214,11 +218,15 @@ export function DepositMonitor() {
                       <td className="p-2 text-sm font-mono">
                         {`${deposit.uid.slice(0, 6)}...${deposit.uid.slice(-4)}`}
                       </td>
+                      <td className="p-2 text-sm"></td>
+                      <td className="p-2 text-sm"></td>
+                      <td className="p-2 text-sm"></td>
+                      <td className="p-2 text-sm"></td>
                     </tr>
                   ))}
                   {deposits.length === 0 && !isLoading && (
                     <tr>
-                      <td colSpan={5} className="p-4 text-center text-sm text-muted-foreground">
+                      <td colSpan={9} className="p-4 text-center text-sm text-muted-foreground">
                         No large deposits in the last hour
                       </td>
                     </tr>

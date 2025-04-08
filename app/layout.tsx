@@ -3,6 +3,7 @@ import { Bricolage_Grotesque } from 'next/font/google'
 import { cn } from '@/lib/utils'
 import { ThemeProvider } from '@/components/theme-provider'
 import RootLayoutNav from '@/components/layout/root-layout-nav'
+import { Toaster } from "@/components/ui/toaster"
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +46,7 @@ export default async function RootLayout({
         >
           <RootLayoutNav />
           <main>{children}</main>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

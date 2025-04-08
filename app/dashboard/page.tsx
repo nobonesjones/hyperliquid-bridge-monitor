@@ -2,7 +2,6 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import DashboardLayout from '@/components/layout/dashboard-layout'
 import DashboardContent from '@/components/dashboard/dashboard-content'
-import { DepositMonitor } from '@/components/deposit-monitor'
 
 export default async function Dashboard() {
   const supabase = createServerComponentClient({ cookies })
@@ -18,7 +17,6 @@ export default async function Dashboard() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <DepositMonitor />
         </div>
         <DashboardContent />
       </div>
