@@ -1,8 +1,11 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { 
-  Card, CardContent, CardHeader, CardTitle
+  Card, CardContent, CardHeader, CardTitle, CardDescription
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { 
@@ -22,74 +25,140 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { 
   ArrowUpCircle, ArrowDownCircle, RefreshCw, 
-  ChevronDown, ExternalLink 
+  ChevronDown, ExternalLink, ArrowDownToLine, ArrowUpFromLine, Eye, ChevronRight
 } from 'lucide-react'
+import { formatCurrency, formatNumber, cn } from '@/lib/utils'
+import { blockchainMonitor, CONFIG } from '@/lib/services/blockchain-monitor'
+import { useToast } from "@/components/ui/use-toast"
 
-// Mock data for large deposits with trader info
-const deposits = [
-  {
-    id: 1,
-    transaction: "0x474c...cc09",
-    fullTransaction: "0x474c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2ccc09",
-    wallet: "0x11dc...a581",
-    fullWallet: "0x11dc8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2ca581",
-    nickname: "WhaleOne",
-    amount: 634722,
-    direction: "in",
-    pnl7d: 12.5,
-    pnl30d: 32.1,
-    positions: 4,
-    date: "Mar 4, 09:09 AM",
-    status: "new"
-  },
-  {
-    id: 2,
-    transaction: "0x6197...1bb3",
-    fullTransaction: "0x61978e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c1bb3",
-    wallet: "0x06e5...1fee",
-    fullWallet: "0x06e58e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c1fee",
-    nickname: "BigTrader",
-    amount: 478258,
-    direction: "out",
-    pnl7d: 8.7,
-    pnl30d: -5.4,
-    positions: 7,
-    date: "Mar 2, 04:09 AM",
-    status: "viewed"
-  },
-  {
-    id: 3,
-    transaction: "0x2968...7dce",
-    fullTransaction: "0x29688e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c7dce",
-    wallet: "0x7329...7842",
-    fullWallet: "0x73298e2c8e2c8e2c8e2c8e2c8e2c8e2c8e2c7842",
-    nickname: "Satoshi2",
-    amount: 672350,
-    direction: "in",
-    pnl7d: -3.2,
-    pnl30d: 17.8,
-    positions: 2,
-    date: "Mar 1, 01:09 AM",
-    status: "new"
-  }
-]
+interface Position {
+  side: 'long' | 'short'
+  sizeUSD: number
+}
+
+interface WalletData {
+  positions: Position[]
+}
+
+interface PositionBias {
+  isLong: boolean
+  percentage: number
+}
+
+interface Transfer {
+  network: string
+  type: 'deposit' | 'withdrawal'
+  token: string
+  from: string
+  to: string
+  amount: number
+  timestamp: number
+  txHash: string
+  blockNumber: number
+  explorerUrl: string
+  positionBias?: PositionBias | null
+  isLoadingBias?: boolean
+  hasNoPositions?: boolean
+  positionCount?: number
+}
+
+const supabase = createClientComponentClient()
 
 export default function DashboardContent() {
-  const [threshold, setThreshold] = useState(500000)
+  const { toast } = useToast()
+  const [threshold, setThreshold] = useState(1000000)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastUpdated, setLastUpdated] = useState("")
   const [followDialogOpen, setFollowDialogOpen] = useState(false)
   const [selectedTrader, setSelectedTrader] = useState<any>(null)
+  const [transfers, setTransfers] = useState<Transfer[]>([])
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [typeFilter, setTypeFilter] = useState<'all' | 'deposit' | 'withdrawal'>('all')
+  const [testWalletData, setTestWalletData] = useState<any>(null)
+  const [testWalletAddress, setTestWalletAddress] = useState<string>('')
+  const [testWalletLoading, setTestWalletLoading] = useState<boolean>(false)
+  const [followLoading, setFollowLoading] = useState<string | null>(null)
+  const [deposits24h, setDeposits24h] = useState<{
+    total: number;
+    deposits: number;
+    withdrawals: number;
+    lastUpdated: string;
+  }>({
+    total: 0,
+    deposits: 0,
+    withdrawals: 0,
+    lastUpdated: new Date().toLocaleString()
+  })
+  const router = useRouter()
 
-  // Set initial timestamp after mount
-  React.useEffect(() => {
-    setLastUpdated(new Date().toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true 
-    }))
+  useEffect(() => {
+    const loadTransfers = async () => {
+      try {
+        const transfers = await blockchainMonitor.getTransfers()
+        console.log('Loaded transfers:', transfers) // Debug log
+        setTransfers(transfers)
+        setLastUpdated(new Date().toLocaleString())
+      } catch (error) {
+        console.error('Error loading transfers:', error)
+      }
+    }
+
+    loadTransfers()
   }, [])
+
+  // Initialize blockchain monitor
+  useEffect(() => {
+    async function initializeMonitor() {
+      const success = await blockchainMonitor.initialize()
+      setIsInitialized(success)
+      if (success) {
+        const initialTransfers = await blockchainMonitor.checkForTransfers()
+        setTransfers(initialTransfers)
+        setLastUpdated(new Date().toLocaleTimeString())
+      }
+    }
+
+    initializeMonitor()
+
+    // Set up polling
+    const interval = setInterval(async () => {
+      if (isInitialized) {
+        const newTransfers = await blockchainMonitor.checkForTransfers()
+        setTransfers(newTransfers)
+        setLastUpdated(new Date().toLocaleTimeString())
+      }
+    }, 30000) // 30 seconds polling interval
+
+    return () => clearInterval(interval)
+  }, [isInitialized])
+
+  // Load saved position data on component mount
+  useEffect(() => {
+    const savedPositions = sessionStorage.getItem('walletPositions')
+    if (savedPositions) {
+      const positions = JSON.parse(savedPositions)
+      setTransfers(prev => prev.map(t => ({
+        ...t,
+        ...positions[t.txHash]
+      })))
+    }
+  }, [])
+
+  // Save position data when it changes
+  useEffect(() => {
+    const positionsToSave = transfers.reduce((acc, t) => {
+      if (t.positionBias || t.hasNoPositions) {
+        acc[t.txHash] = {
+          positionBias: t.positionBias,
+          hasNoPositions: t.hasNoPositions,
+          positionCount: t.positionCount
+        }
+      }
+      return acc
+    }, {} as Record<string, any>)
+    
+    sessionStorage.setItem('walletPositions', JSON.stringify(positionsToSave))
+  }, [transfers])
 
   // Format currency
   const formatCurrency = (amount: number) => {
@@ -98,7 +167,7 @@ export default function DashboardContent() {
 
   // Format percentage with + or - sign
   const formatPercentage = (percent: number) => {
-    return percent >= 0 ? `+${percent}%` : `${percent}%`
+    return percent >= 0 ? `+${Math.round(percent)}%` : `${Math.round(percent)}%`
   }
 
   // Get class for PnL coloring
@@ -107,28 +176,268 @@ export default function DashboardContent() {
   }
 
   // Handle refresh
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true)
-    // Simulate data refresh
-    setTimeout(() => {
-      setIsRefreshing(false)
-      setLastUpdated(new Date().toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true 
-      }))
-    }, 1000)
+    if (isInitialized) {
+      const newTransfers = await blockchainMonitor.checkForTransfers()
+      setTransfers(newTransfers)
+      setLastUpdated(new Date().toLocaleTimeString())
+    }
+    setIsRefreshing(false)
   }
 
   // Open follow dialog
-  const openFollowDialog = (trader: any) => {
-    setSelectedTrader(trader)
+  const openFollowDialog = (transfer: Transfer) => {
+    setSelectedTrader({ wallet: transfer.from, nickname: `Trader-${transfer.from.slice(0, 6)}` })
     setFollowDialogOpen(true)
   }
 
+  const formatDate = (timestamp: number) => {
+    const date = new Date(timestamp)
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true
+    })
+  }
+
+  const calculatePositionBias = (positions: any[]) => {
+    if (!positions || positions.length === 0) return { percentage: 0, isLong: true }
+    
+    const totalValue = positions.reduce((sum: number, pos: any) => sum + Math.abs(pos.sizeUSD || 0), 0)
+    const longValue = positions.reduce((sum: number, pos: any) => sum + (pos.side === 'long' ? (pos.sizeUSD || 0) : 0), 0)
+    const shortValue = positions.reduce((sum: number, pos: any) => sum + (pos.side === 'short' ? (pos.sizeUSD || 0) : 0), 0)
+    
+    if (longValue >= shortValue) {
+      return { percentage: (longValue / totalValue) * 100, isLong: true }
+    } else {
+      return { percentage: (shortValue / totalValue) * 100, isLong: false }
+    }
+  }
+
+  const fetchWalletPositions = useCallback(async (walletAddress: string, txHash: string) => {
+    try {
+      // Mark this wallet as loading using txHash
+      setTransfers(prev => prev.map(t => ({
+        ...t,
+        isLoadingBias: t.txHash === txHash ? true : t.isLoadingBias
+      })))
+
+      const response = await fetch('https://api.hyperliquid.xyz/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'clearinghouseState',
+          user: walletAddress
+        })
+      })
+
+      if (!response.ok) throw new Error('Failed to fetch positions')
+      
+      const data = await response.json()
+      console.log('Position data:', data)
+
+      // Calculate position bias
+      if (!data.assetPositions || data.assetPositions.length === 0) {
+        // No positions case
+        setTransfers(prev => prev.map(t => ({
+          ...t,
+          isLoadingBias: t.txHash === txHash ? false : t.isLoadingBias,
+          positionBias: null,
+          hasNoPositions: t.txHash === txHash ? true : t.hasNoPositions,
+          positionCount: t.txHash === txHash ? 0 : t.positionCount
+        })))
+        return
+      }
+
+      const positions = data.assetPositions || []
+      let longValue = 0
+      let shortValue = 0
+
+      positions.forEach((position: any) => {
+        const side = position.position?.side || (parseFloat(position.position?.szi || '0') > 0 ? 'long' : 'short')
+        const value = Math.abs(parseFloat(position.position?.sizeUsd || position.position?.positionValue || '0'))
+        
+        if (side === 'long') longValue += value
+        else shortValue += value
+      })
+
+      const totalValue = longValue + shortValue
+      const isLong = longValue > shortValue
+      const percentage = totalValue === 0 ? 0 : Math.round((Math.max(longValue, shortValue) / totalValue) * 100)
+
+      // Update the specific transfer with position bias using txHash
+      setTransfers(prev => prev.map(t => ({
+        ...t,
+        isLoadingBias: t.txHash === txHash ? false : t.isLoadingBias,
+        positionBias: t.txHash === txHash ? {
+          isLong,
+          percentage
+        } : t.positionBias,
+        positionCount: t.txHash === txHash ? positions.length : t.positionCount
+      })))
+
+    } catch (error) {
+      console.error('Error fetching positions:', error)
+      // Reset loading state on error using txHash
+      setTransfers(prev => prev.map(t => ({
+        ...t,
+        isLoadingBias: t.txHash === txHash ? false : t.isLoadingBias
+      })))
+    }
+  }, [])
+
+  const calculateAllTimePnl = (tradeHistory: any[]): number => {
+    if (!tradeHistory || !Array.isArray(tradeHistory) || tradeHistory.length === 0) {
+      return 0
+    }
+
+    try {
+      // Sum up realized PnL from all trades
+      return tradeHistory.reduce((total: number, trade: any) => {
+        const pnl = parseFloat(trade.realizedPnl || "0")
+        return total + (isNaN(pnl) ? 0 : pnl)
+      }, 0)
+    } catch (error) {
+      console.error('Error calculating all-time PnL:', error)
+      return 0
+    }
+  }
+
+  // Function to follow a wallet
+  const followWallet = useCallback(async (address: string) => {
+    try {
+      setFollowLoading(address)
+      
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError) throw userError
+      if (!user) throw new Error("Not authenticated")
+      
+      // Check if already following
+      const { data: existing } = await supabase
+        .from('followed_wallets')
+        .select()
+        .eq('user_id', user.id)
+        .eq('address', address)
+        .single()
+      
+      if (existing) {
+        toast({
+          title: "Already Following",
+          description: "You are already following this wallet",
+          variant: "destructive"
+        })
+        return
+      }
+
+      // Get wallet name from transfers data
+      const walletName = transfers.find(t => t.from === address)?.from || 
+                       `Wallet ${address.substring(0, 6)}...${address.substring(address.length - 4)}`
+
+      // Insert into database
+      const { error: insertError } = await supabase
+        .from('followed_wallets')
+        .insert({
+          user_id: user.id,
+          address: address,
+          name: walletName
+        })
+
+      if (insertError) throw insertError
+
+      toast({
+        title: "Wallet Followed",
+        description: `Successfully followed ${walletName}`,
+      })
+
+      // Trigger sidebar update (we'll implement this next)
+      window.dispatchEvent(new Event('walletFollowed'))
+
+      router.push(`/dashboard/tool-3/wallet/${address}`)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to follow wallet. Please try again.",
+        variant: "destructive"
+      })
+    } finally {
+      setFollowLoading(null)
+    }
+  }, [router, supabase, transfers, toast])
+
+  // Add effect for fetching 24h deposits data
+  useEffect(() => {
+    const fetchDeposits24h = async () => {
+      try {
+        // Calculate 24 hours ago
+        const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000)
+        
+        // Filter transfers from the last 24 hours
+        const recent = transfers.filter(t => t.timestamp >= oneDayAgo)
+        
+        // Calculate totals
+        const deposits = recent
+          .filter(t => t.type === 'deposit')
+          .reduce((sum, t) => sum + t.amount, 0)
+        
+        const withdrawals = recent
+          .filter(t => t.type === 'withdrawal')
+          .reduce((sum, t) => sum + t.amount, 0)
+        
+        setDeposits24h({
+          total: deposits - withdrawals,
+          deposits,
+          withdrawals,
+          lastUpdated: new Date().toLocaleString()
+        })
+      } catch (error) {
+        console.error('Error calculating 24h deposits:', error)
+      }
+    }
+
+    // Initial fetch
+    fetchDeposits24h()
+
+    // Set up hourly updates
+    const interval = setInterval(fetchDeposits24h, 60 * 60 * 1000) // Every hour
+
+    return () => clearInterval(interval)
+  }, [transfers])
+
+  // Filter transfers based on all active filters
+  const filteredTransfers = transfers
+    .filter(t => t.amount >= threshold)
+    .filter(t => typeFilter === 'all' || t.type === typeFilter);
+
   return (
     <div className="space-y-6">
+      {/* TEST HEADING - DELETE LATER */}
+      <Card className="border-dashed border-yellow-500/50 bg-yellow-500/10">
+        <CardHeader>
+          <CardTitle className="text-yellow-500">Test Heading</CardTitle>
+          <CardDescription className="text-yellow-500/80">
+            24h Net Flow: {formatCurrency(deposits24h.total)}
+            <div className="text-xs text-muted-foreground mt-1">
+              Deposits: {formatCurrency(deposits24h.deposits)} | 
+              Withdrawals: {formatCurrency(deposits24h.withdrawals)}
+              <br />
+              Last updated: {deposits24h.lastUpdated}
+            </div>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-sm text-muted-foreground">
+            Click "Reveal" button to fetch wallet data
+          </div>
+          <div className="mt-4 text-sm">
+            This card was added for testing purposes. Click the "Reveal" button in any row to see wallet data here.
+          </div>
+        </CardContent>
+      </Card>
+      
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -136,7 +445,7 @@ export default function DashboardContent() {
             <CardTitle className="text-sm font-medium">24hr Deposit</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">$2.4M</div>
+            <div className="text-2xl font-bold">{formatCurrency(2400000)}</div>
           </CardContent>
         </Card>
         
@@ -145,7 +454,7 @@ export default function DashboardContent() {
             <CardTitle className="text-sm font-medium">1hr Deposits</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">$634K</div>
+            <div className="text-2xl font-bold">{formatCurrency(634000)}</div>
           </CardContent>
         </Card>
         
@@ -154,7 +463,7 @@ export default function DashboardContent() {
             <CardTitle className="text-sm font-medium">Deposit Trend</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-500">+12%</div>
+            <div className="text-2xl font-bold text-green-500">+{formatNumber(12)}%</div>
           </CardContent>
         </Card>
         
@@ -163,7 +472,7 @@ export default function DashboardContent() {
             <CardTitle className="text-sm font-medium">Net Buy/Sell</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-500">+$1.2M</div>
+            <div className="text-2xl font-bold text-green-500">{formatCurrency(1200000)}</div>
           </CardContent>
         </Card>
       </div>
@@ -180,13 +489,13 @@ export default function DashboardContent() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
-                Filter: ${threshold / 1000}K <ChevronDown className="ml-2 h-4 w-4" />
+                Filter: {threshold >= 1000000 ? '$1M+' : `$${threshold / 1000}K`} <ChevronDown className="ml-2 h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuItem onClick={() => setThreshold(100000)}>$100K</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setThreshold(500000)}>$500K</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setThreshold(1000000)}>$1M</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setThreshold(1000000)}>$1M+</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -209,75 +518,182 @@ export default function DashboardContent() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Transaction</TableHead>
-                <TableHead>Wallet</TableHead>
+                <TableHead>Time</TableHead>
+                <TableHead>From</TableHead>
                 <TableHead>Amount</TableHead>
-                <TableHead>In/Out</TableHead>
-                <TableHead>7d PnL</TableHead>
+                <TableHead>
+                  <div className="flex items-center gap-2">
+                    Type
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem onClick={() => setTypeFilter('all')}>
+                          All
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setTypeFilter('deposit')}>
+                          Deposits Only
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setTypeFilter('withdrawal')}>
+                          Withdrawals Only
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </TableHead>
                 <TableHead>30d PnL</TableHead>
                 <TableHead>Positions</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>Position Bias</TableHead>
+                <TableHead>Follow</TableHead>
+                <TableHead>Tx</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {deposits.filter(d => d.amount >= threshold).map((deposit) => (
-                <TableRow key={deposit.id}>
-                  <TableCell className="font-mono">
-                    <a 
-                      href={`https://hyperliquid.xyz/tx/${deposit.fullTransaction}`}
+              {filteredTransfers.map((transfer, index) => (
+                <TableRow key={transfer.txHash}>
+                  <TableCell className="p-2 text-sm whitespace-nowrap">
+                    {formatDate(transfer.timestamp)}
+                  </TableCell>
+                  <TableCell>
+                    <Link 
+                      href={`/dashboard/tool-2?address=${transfer.from}`}
                       target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center hover:underline"
+                      className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
                     >
-                      {deposit.transaction}
-                      <ExternalLink className="ml-1 h-3 w-3" />
-                    </a>
+                      {`${transfer.from.slice(0, 6)}...${transfer.from.slice(-4)}`}
+                      <ExternalLink className="h-3 w-3" />
+                    </Link>
                   </TableCell>
-                  
                   <TableCell>
-                    <div className="font-mono">{deposit.wallet}</div>
-                    <div className="text-sm text-muted-foreground">{deposit.nickname}</div>
-                  </TableCell>
-                  
-                  <TableCell>
-                    <Badge variant="outline" className="px-2 py-1 font-semibold bg-red-100/10 text-red-500 border-red-200/20">
-                      {formatCurrency(deposit.amount)}
+                    <Badge 
+                      variant="outline" 
+                      className={`px-2 py-1 font-semibold ${
+                        transfer.type === 'deposit' 
+                          ? 'bg-green-100/10 text-green-500 border-green-200/20'
+                          : 'bg-red-100/10 text-red-500 border-red-200/20'
+                      }`}
+                    >
+                      {formatCurrency(transfer.amount)}
                     </Badge>
                   </TableCell>
-                  
                   <TableCell>
-                    {deposit.direction === 'in' ? (
-                      <Badge variant="outline" className="bg-green-100/10 text-green-500 border-green-200/20">
-                        IN <ArrowUpCircle className="ml-1 h-3 w-3" />
-                      </Badge>
+                    {transfer.type === 'deposit' ? (
+                      <div className="flex items-center text-green-500">
+                        <ArrowDownToLine className="h-4 w-4 mr-1" />
+                        Deposit
+                      </div>
                     ) : (
-                      <Badge variant="outline" className="bg-red-100/10 text-red-500 border-red-200/20">
-                        OUT <ArrowDownCircle className="ml-1 h-3 w-3" />
-                      </Badge>
+                      <div className="flex items-center text-orange-500">
+                        <ArrowUpFromLine className="h-4 w-4 mr-1" />
+                        Withdraw
+                      </div>
                     )}
                   </TableCell>
-                  
-                  <TableCell className={getPnlColorClass(deposit.pnl7d)}>
-                    {formatPercentage(deposit.pnl7d)}
+                  <TableCell className="p-2 text-sm text-muted-foreground">
+                    Coming soon
                   </TableCell>
-                  
-                  <TableCell className={getPnlColorClass(deposit.pnl30d)}>
-                    {formatPercentage(deposit.pnl30d)}
+                  <TableCell className="p-2 text-sm text-muted-foreground">
+                    Coming soon
                   </TableCell>
-                  
-                  <TableCell>{deposit.positions} open</TableCell>
-                  
+                  <TableCell>
+                    {transfer.positionBias ? (
+                      <div className="flex flex-col gap-1">
+                        <Badge 
+                          variant="outline" 
+                          className={`px-2 py-1 font-semibold ${
+                            transfer.positionBias.isLong
+                              ? 'bg-green-100/10 text-green-500 border-green-200/20'
+                              : 'bg-red-100/10 text-red-500 border-red-200/20'
+                          }`}
+                        >
+                          {Math.round(transfer.positionBias.percentage)}% {transfer.positionBias.isLong ? 'Long' : 'Short'}
+                        </Badge>
+                        <div className="text-xs text-muted-foreground pl-2">
+                          {transfer.positionCount} active {transfer.positionCount === 1 ? 'position' : 'positions'}
+                        </div>
+                      </div>
+                    ) : transfer.hasNoPositions ? (
+                      <div className="flex flex-col gap-1">
+                        <Badge variant="outline" className="px-2 py-1 font-semibold bg-muted/50 text-muted-foreground">
+                          NO POSITION
+                        </Badge>
+                        <div className="text-xs text-muted-foreground pl-2">
+                          0 active positions
+                        </div>
+                      </div>
+                    ) : (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-7 px-2 text-muted-foreground hover:text-primary"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          const walletAddress = transfer.from
+                          console.log('Button clicked for transfer:', transfer)
+                          console.log('Using wallet address:', walletAddress)
+                          if (walletAddress) {
+                            fetchWalletPositions(walletAddress, transfer.txHash)
+                          } else {
+                            console.error('No wallet address found in transfer:', transfer)
+                          }
+                        }}
+                        disabled={transfer.isLoadingBias}
+                      >
+                        {transfer.isLoadingBias ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                        <span className="sr-only">Reveal position bias</span>
+                      </Button>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Button 
-                      variant="outline" 
+                      variant="outline"
                       size="sm"
-                      onClick={() => openFollowDialog(deposit)}
+                      onClick={() => followWallet(transfer.from)}
+                      disabled={followLoading === transfer.from}
                     >
-                      Follow
+                      {followLoading === transfer.from ? (
+                        <div className="flex items-center">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900 mr-2" />
+                          Following...
+                        </div>
+                      ) : (
+                        "Follow"
+                      )}
+                    </Button>
+                  </TableCell>
+                  <TableCell>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 px-2 text-muted-foreground hover:text-primary"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        const network = transfer.network as 'ARBITRUM' | 'ETHEREUM'
+                        window.open(`${CONFIG[network].EXPLORER_URL}/tx/${transfer.txHash}`, '_blank')
+                      }}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      <span className="sr-only">View transaction</span>
                     </Button>
                   </TableCell>
                 </TableRow>
               ))}
+              {transfers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={10} className="p-4 text-center text-sm text-muted-foreground">
+                    No large transfers detected yet
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -299,10 +715,9 @@ export default function DashboardContent() {
                 Wallet
               </Label>
               <div className="col-span-3 font-mono text-sm">
-                {selectedTrader?.fullWallet}
+                {selectedTrader?.wallet}
               </div>
             </div>
-            
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="nickname" className="text-right">
                 Nickname
@@ -313,18 +728,17 @@ export default function DashboardContent() {
                 className="col-span-3"
               />
             </div>
-            
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="amount" className="text-right">
                 Copy Amount
               </Label>
               <Input
                 id="amount"
-                placeholder="$1000"
+                type="number"
+                placeholder="USDC amount to copy with"
                 className="col-span-3"
               />
             </div>
-            
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="leverage" className="text-right">
                 Leverage
@@ -339,12 +753,12 @@ export default function DashboardContent() {
               />
             </div>
           </div>
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setFollowDialogOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit">Start Copy Trading</Button>
+            <Button type="submit">Confirm</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
