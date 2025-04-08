@@ -30,7 +30,7 @@ export default function ProfilePage() {
       setLoading(false)
     }
     loadProfile()
-  }, [supabase.auth])
+  }, [])
 
   const handleUpdateName = async () => {
     try {

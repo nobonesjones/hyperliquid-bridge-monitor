@@ -48,7 +48,7 @@ export default function SignUp() {
       setTimeout(() => {
         router.push('/auth/sign-in')
       }, 3000)
-    } catch {
+    } catch (err) {
       setError('An unexpected error occurred')
     }
   }
