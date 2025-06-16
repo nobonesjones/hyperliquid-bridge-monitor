@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { BarChart2, Copy, PieChart, MessageCircle, Settings, HelpCircle, LayoutGrid, ChevronDown, ChevronRight, Wallet } from 'lucide-react'
+import { BarChart2, Copy, PieChart, MessageCircle, Settings, HelpCircle, LayoutGrid, ChevronDown, ChevronRight, Wallet, Users, ArrowDownToLine, Brain } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTheme } from 'next-themes'
 
 interface FollowedWallet {
   address: string
@@ -15,6 +16,7 @@ interface FollowedWallet {
 export default function Sidebar() {
   const supabase = createClientComponentClient()
   const pathname = usePathname()
+  const { theme } = useTheme()
   const [walletsOpen, setWalletsOpen] = useState(
     pathname === '/dashboard/tool-3' || pathname?.startsWith('/dashboard/tool-3/')
   )
@@ -73,12 +75,12 @@ export default function Sidebar() {
   }, [supabase, fetchFollowedWallets])
 
   return (
-    <div className="w-64 border-r border-border bg-background-secondary">
+    <div className={`w-64 border-r border-border ${theme === 'light' ? 'bg-gray-50 text-gray-900' : 'bg-background-secondary text-foreground'}`}>
       {/* Navigation */}
       <div className="flex flex-col gap-6 p-4">
         {/* Overview Section */}
         <nav className="flex flex-col gap-1">
-          <div className="mb-2 px-2 text-xs font-medium text-foreground-muted">OVERVIEW</div>
+          <div className={`mb-2 px-2 text-xs font-medium ${theme === 'light' ? 'text-gray-500' : 'text-foreground-muted'}`}>OVERVIEW</div>
           <Link
             href="/dashboard"
             className={cn(
@@ -113,7 +115,37 @@ export default function Sidebar() {
 
         {/* Tools Section */}
         <nav className="flex flex-col gap-1">
-          <div className="mb-2 px-2 text-xs font-medium text-foreground-muted">TOOLS</div>
+          <div className={`mb-2 px-2 text-xs font-medium ${theme === 'light' ? 'text-gray-500' : 'text-foreground-muted'}`}>TOOLS</div>
+          <Link
+            href="/dashboard/top-traders"
+            className={cn(
+              "sidebar-nav-item",
+              pathname === '/dashboard/top-traders' && "active"
+            )}
+          >
+            <Users className="mr-2 h-4 w-4" />
+            Top Traders
+          </Link>
+          <Link
+            href="/dashboard/large-deposits"
+            className={cn(
+              "sidebar-nav-item",
+              pathname === '/dashboard/large-deposits' && "active"
+            )}
+          >
+            <ArrowDownToLine className="mr-2 h-4 w-4" />
+            Large Deposits
+          </Link>
+          <Link
+            href="/dashboard/trader-analysis"
+            className={cn(
+              "sidebar-nav-item",
+              pathname === '/dashboard/trader-analysis' && "active"
+            )}
+          >
+            <Brain className="mr-2 h-4 w-4" />
+            AI Trader Analysis
+          </Link>
           <Link
             href="/dashboard/tool-1"
             className={cn(
@@ -161,7 +193,8 @@ export default function Sidebar() {
                     href={`/dashboard/tool-3/wallet/${wallet.address}`}
                     className={cn(
                       "sidebar-nav-item py-1.5 text-sm truncate",
-                      pathname === `/dashboard/tool-3/wallet/${wallet.address}` && "active"
+                      pathname === `/dashboard/tool-3/wallet/${wallet.address}` && "active",
+                      theme === 'light' ? 'text-gray-900' : 'text-foreground'
                     )}
                     title={wallet.address}
                   >
@@ -175,7 +208,7 @@ export default function Sidebar() {
 
         {/* Communication Section */}
         <nav className="flex flex-col gap-1">
-          <div className="mb-2 px-2 text-xs font-medium text-foreground-muted">COMMUNICATION</div>
+          <div className={`mb-2 px-2 text-xs font-medium ${theme === 'light' ? 'text-gray-500' : 'text-foreground-muted'}`}>COMMUNICATION</div>
           <Link
             href="/dashboard/chat"
             className={cn(

@@ -8,18 +8,18 @@ export const CONFIG = {
   ARBITRUM: {
     RPC: 'https://arb1.arbitrum.io/rpc',
     USDC_CONTRACT: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
-    DEPOSIT_ADDRESS: '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7',
-    WITHDRAWAL_ADDRESS: '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7', // Same as deposit for now
+    DEPOSIT_ADDRESS: '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7', // Hyperliquid Arbitrum bridge
+    WITHDRAWAL_ADDRESS: '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7',
     EXPLORER_API: 'https://api.arbiscan.io/api',
     EXPLORER_KEY: process.env.NEXT_PUBLIC_ARBISCAN_API_KEY || '',
     EXPLORER_URL: 'https://arbiscan.io',
-    LOOKBACK_HOURS: 1
+    LOOKBACK_HOURS: 24 // Increased to 24 hours for better data
   },
   ETHEREUM: {
     RPC: 'https://eth.llamarpc.com',
     USDC_CONTRACT: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
     DEPOSIT_ADDRESS: '0x86f6c353A0965eB069cD7f4f91C1aFEf8C725551', // Hyperliquid Ethereum deposit address
-    WITHDRAWAL_ADDRESS: '0x86f6c353A0965eB069cD7f4f91C1aFEf8C725551', // Same as deposit for now
+    WITHDRAWAL_ADDRESS: '0x86f6c353A0965eB069cD7f4f91C1aFEf8C725551',
     EXPLORER_API: 'https://api.etherscan.io/api',
     EXPLORER_KEY: process.env.NEXT_PUBLIC_ETHERSCAN_API_KEY || '',
     EXPLORER_URL: 'https://etherscan.io',
@@ -28,7 +28,7 @@ export const CONFIG = {
   
   // Time intervals
   POLLING_INTERVAL: 30000, // 30 seconds
-  LARGE_AMOUNT_THRESHOLD: 50000, // $50K USD
+  LARGE_AMOUNT_THRESHOLD: 10000, // $10K USD (reduced for testing)
   
   // Token decimals
   TOKEN_DECIMALS: {
@@ -116,6 +116,9 @@ class BlockchainMonitor {
     const config = CONFIG[network];
 
     try {
+      console.log(`Checking ${network} transfers from timestamp:`, this.lastTimestamp[network]);
+      console.log(`API Key configured:`, !!config.EXPLORER_KEY);
+      
       // Get token transfers to and from the addresses
       const response = await axios.get(config.EXPLORER_API, {
         params: {
@@ -130,8 +133,13 @@ class BlockchainMonitor {
         }
       });
 
+      console.log(`${network} API response status:`, response.data.status);
+      console.log(`${network} API response message:`, response.data.message);
+      
       if (response.data.status === '1' && Array.isArray(response.data.result)) {
         const transfers = response.data.result as TransferEvent[];
+        
+        console.log(`${network} found ${transfers.length} total transfers`);
         
         // Process transfers
         for (const transfer of transfers) {
@@ -155,11 +163,15 @@ class BlockchainMonitor {
             });
           }
         }
+        
+        console.log(`${network} processed ${newTransfers.length} large transfers (≥$${CONFIG.LARGE_AMOUNT_THRESHOLD})`);
+      } else {
+        console.warn(`${network} API returned no results or error:`, response.data);
+      }
 
-        // Update last checked timestamp
-        if (transfers.length > 0) {
-          this.lastTimestamp[network] = Number(transfers[0].timeStamp);
-        }
+      // Update last checked timestamp
+      if (response.data.status === '1' && Array.isArray(response.data.result) && response.data.result.length > 0) {
+        this.lastTimestamp[network] = Number(response.data.result[0].timeStamp);
       }
 
       return newTransfers;

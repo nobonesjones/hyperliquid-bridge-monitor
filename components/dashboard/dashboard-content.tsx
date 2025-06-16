@@ -30,6 +30,8 @@ import {
 import { formatCurrency, formatNumber, cn } from '@/lib/utils'
 import { blockchainMonitor, CONFIG } from '@/lib/services/blockchain-monitor'
 import { useToast } from "@/components/ui/use-toast"
+import { DepositsBTCChart } from '@/components/ui/deposits-btc-chart'
+import { BTCPriceDisplay } from '@/components/btc-price-display'
 
 interface Position {
   side: 'long' | 'short'
@@ -78,6 +80,7 @@ export default function DashboardContent() {
   const [testWalletAddress, setTestWalletAddress] = useState<string>('')
   const [testWalletLoading, setTestWalletLoading] = useState<boolean>(false)
   const [followLoading, setFollowLoading] = useState<string | null>(null)
+  const [savedWalletNames, setSavedWalletNames] = useState<Record<string, string>>({})
   const [deposits24h, setDeposits24h] = useState<{
     total: number;
     deposits: number;
@@ -91,15 +94,91 @@ export default function DashboardContent() {
   })
   const router = useRouter()
 
+  // Fetch saved wallet names
+  const fetchSavedWalletNames = async () => {
+    try {
+      // Fetch from followed_wallets table
+      const { data: followedWallets, error: followedError } = await supabase
+        .from('followed_wallets')
+        .select('address, name')
+        .not('name', 'is', null)
+
+      if (followedError) {
+        console.error('Error fetching followed wallet names:', followedError)
+      }
+
+      // Fetch from top_traders table
+      const { data: topTraders, error: topTradersError } = await supabase
+        .from('top_traders')
+        .select('address, name')
+        .not('name', 'is', null)
+
+      if (topTradersError) {
+        console.error('Error fetching top trader names:', topTradersError)
+      }
+
+      // Merge results from both tables
+      const allWallets = [
+        ...(followedWallets || []),
+        ...(topTraders || [])
+      ]
+
+      const nameMap = allWallets.reduce((acc, wallet) => {
+        acc[wallet.address.toLowerCase()] = wallet.name
+        return acc
+      }, {} as Record<string, string>)
+
+      setSavedWalletNames(nameMap)
+    } catch (error) {
+      console.error('Error fetching saved wallet names:', error)
+    }
+  }
+
+  // Get display name for wallet address
+  const getWalletDisplayName = (address: string) => {
+    const savedName = savedWalletNames[address.toLowerCase()]
+    if (savedName) {
+      return savedName
+    }
+    return `${address.slice(0, 6)}...${address.slice(-4)}`
+  }
+
+  // Refresh saved wallet names (can be called when a wallet is saved)
+  const refreshSavedWalletNames = () => {
+    fetchSavedWalletNames()
+  }
+
+  // Fetch saved wallet names on component mount
+  useEffect(() => {
+    fetchSavedWalletNames()
+  }, [])
+
+  // Refresh saved wallet names when window gains focus (user returns from saving a wallet)
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchSavedWalletNames()
+    }
+
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [])
+
   useEffect(() => {
     const loadTransfers = async () => {
       try {
+        console.log('Loading initial transfers...')
         const transfers = await blockchainMonitor.getTransfers()
-        console.log('Loaded transfers:', transfers) // Debug log
+        console.log('Loaded transfers:', transfers.length, 'transfers')
+        console.log('Sample transfer:', transfers[0])
         setTransfers(transfers)
         setLastUpdated(new Date().toLocaleString())
       } catch (error) {
         console.error('Error loading transfers:', error)
+        toast({
+          title: "Error loading transfers",
+          description: "Failed to load transfer data. Please refresh the page.",
+          variant: "destructive"
+        })
       }
     }
 
@@ -109,12 +188,22 @@ export default function DashboardContent() {
   // Initialize blockchain monitor
   useEffect(() => {
     async function initializeMonitor() {
+      console.log('Initializing blockchain monitor...')
       const success = await blockchainMonitor.initialize()
+      console.log('Monitor initialized:', success)
       setIsInitialized(success)
       if (success) {
+        console.log('Checking for initial transfers...')
         const initialTransfers = await blockchainMonitor.checkForTransfers()
+        console.log('Initial transfers found:', initialTransfers.length)
         setTransfers(initialTransfers)
         setLastUpdated(new Date().toLocaleTimeString())
+      } else {
+        toast({
+          title: "Monitor initialization failed",
+          description: "Failed to initialize blockchain monitor. Some features may not work.",
+          variant: "destructive"
+        })
       }
     }
 
@@ -123,7 +212,9 @@ export default function DashboardContent() {
     // Set up polling
     const interval = setInterval(async () => {
       if (isInitialized) {
+        console.log('Polling for new transfers...')
         const newTransfers = await blockchainMonitor.checkForTransfers()
+        console.log('Polling result:', newTransfers.length, 'transfers')
         setTransfers(newTransfers)
         setLastUpdated(new Date().toLocaleTimeString())
       }
@@ -178,10 +269,31 @@ export default function DashboardContent() {
   // Handle refresh
   const handleRefresh = async () => {
     setIsRefreshing(true)
-    if (isInitialized) {
-      const newTransfers = await blockchainMonitor.checkForTransfers()
-      setTransfers(newTransfers)
-      setLastUpdated(new Date().toLocaleTimeString())
+    try {
+      console.log('Manual refresh triggered...')
+      if (isInitialized) {
+        const newTransfers = await blockchainMonitor.checkForTransfers()
+        console.log('Manual refresh found:', newTransfers.length, 'transfers')
+        setTransfers(newTransfers)
+        setLastUpdated(new Date().toLocaleTimeString())
+        toast({
+          title: "Refresh completed",
+          description: `Found ${newTransfers.length} transfers. Last updated: ${new Date().toLocaleTimeString()}`,
+        })
+      } else {
+        toast({
+          title: "Monitor not initialized",
+          description: "Please wait for the blockchain monitor to initialize.",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Manual refresh error:', error)
+      toast({
+        title: "Refresh failed",
+        description: "Failed to refresh transfer data. Please try again.",
+        variant: "destructive"
+      })
     }
     setIsRefreshing(false)
   }
@@ -412,34 +524,143 @@ export default function DashboardContent() {
     .filter(t => t.amount >= threshold)
     .filter(t => typeFilter === 'all' || t.type === typeFilter);
 
+  // Process deposits data for chart (net deposits = deposits - withdrawals)
+  const processDepositsForChart = () => {
+    if (transfers.length === 0) {
+      return []
+    }
+
+    // Sort all transfers by timestamp
+    const sortedTransfers = [...transfers].sort((a, b) => a.timestamp - b.timestamp)
+    
+    // Group by hour for 24H view
+    const hourlyData = new Map<string, { 
+      deposits: number; 
+      withdrawals: number; 
+      netFlow: number; 
+      depositCount: number; 
+      withdrawalCount: number; 
+      timestamp: number 
+    }>()
+    
+    sortedTransfers.forEach(transfer => {
+      const hour = new Date(transfer.timestamp).toISOString().slice(0, 13) // YYYY-MM-DDTHH
+      const existing = hourlyData.get(hour) || { 
+        deposits: 0, 
+        withdrawals: 0, 
+        netFlow: 0, 
+        depositCount: 0, 
+        withdrawalCount: 0, 
+        timestamp: transfer.timestamp 
+      }
+      
+      if (transfer.type === 'deposit') {
+        existing.deposits += transfer.amount
+        existing.depositCount += 1
+      } else {
+        existing.withdrawals += transfer.amount
+        existing.withdrawalCount += 1
+      }
+      
+      existing.netFlow = existing.deposits - existing.withdrawals
+      hourlyData.set(hour, existing)
+    })
+
+    // Convert to cumulative net flow data
+    let cumulativeNet = 0
+    const chartData = Array.from(hourlyData.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([hour, data]) => {
+        cumulativeNet += data.netFlow
+        return {
+          timestamp: data.timestamp,
+          cumulativeDeposits: cumulativeNet, // This is now net flow
+          depositCount: data.depositCount + data.withdrawalCount, // Total transactions
+          hourlyNetFlow: data.netFlow,
+          hourlyDeposits: data.deposits,
+          hourlyWithdrawals: data.withdrawals,
+          date: new Date(data.timestamp).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric'
+          })
+        }
+      })
+
+    return chartData
+  }
+
+  const depositsChartData = processDepositsForChart()
+
   return (
     <div className="space-y-6">
-      {/* TEST HEADING - DELETE LATER */}
-      <Card className="border-dashed border-yellow-500/50 bg-yellow-500/10">
-        <CardHeader>
-          <CardTitle className="text-yellow-500">Test Heading</CardTitle>
-          <CardDescription className="text-yellow-500/80">
-            24h Net Flow: {formatCurrency(deposits24h.total)}
-            <div className="text-xs text-muted-foreground mt-1">
-              Deposits: {formatCurrency(deposits24h.deposits)} | 
-              Withdrawals: {formatCurrency(deposits24h.withdrawals)}
-              <br />
-              Last updated: {deposits24h.lastUpdated}
+      {/* Debug Info */}
+      {process.env.NODE_ENV === 'development' && (
+        <Card className="border-dashed border-blue-500/50 bg-blue-500/10">
+          <CardHeader>
+            <CardTitle className="text-blue-500">Debug Info</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <strong>Monitor Status:</strong> {isInitialized ? '✅ Initialized' : '❌ Not Initialized'}
+              </div>
+              <div>
+                <strong>Transfers Count:</strong> {transfers.length}
+              </div>
+              <div>
+                <strong>Last Updated:</strong> {lastUpdated || 'Never'}
+              </div>
+              <div>
+                <strong>Threshold:</strong> ${CONFIG.LARGE_AMOUNT_THRESHOLD.toLocaleString()}
+              </div>
             </div>
+            <Button 
+              onClick={handleRefresh} 
+              disabled={isRefreshing}
+              className="mt-4"
+              size="sm"
+            >
+              {isRefreshing ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Manual Refresh
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Deposits vs BTC Price Chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Large Deposits vs BTC Price</CardTitle>
+          <CardDescription>
+            Correlation analysis between large deposit activity and Bitcoin price movements
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="text-sm text-muted-foreground">
-            Click "Reveal" button to fetch wallet data
-          </div>
-          <div className="mt-4 text-sm">
-            This card was added for testing purposes. Click the "Reveal" button in any row to see wallet data here.
-          </div>
+          <DepositsBTCChart 
+            depositsData={depositsChartData}
+            isLoading={!isInitialized}
+          />
         </CardContent>
       </Card>
       
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        {/* BTC Price Card */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">BTC Price</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <BTCPriceDisplay 
+              className="border-0 shadow-none"
+              showChange={true}
+              showSource={true}
+              refreshInterval={30000}
+            />
+          </CardContent>
+        </Card>
+        
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">24hr Deposit</CardTitle>
@@ -479,7 +700,7 @@ export default function DashboardContent() {
 
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">Large Deposit Monitor</h2>
+          <h2 className="text-2xl font-bold dashboard-title">Large Deposit Monitor</h2>
           <p className="text-sm text-muted-foreground">
             Last updated: {lastUpdated}
           </p>
@@ -559,12 +780,11 @@ export default function DashboardContent() {
                   </TableCell>
                   <TableCell>
                     <Link 
-                      href={`/dashboard/tool-2?address=${transfer.from}`}
-                      target="_blank"
+                      href={`/dashboard/top-traders/${transfer.from}`}
                       className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
                     >
-                      {`${transfer.from.slice(0, 6)}...${transfer.from.slice(-4)}`}
-                      <ExternalLink className="h-3 w-3" />
+                      {getWalletDisplayName(transfer.from)}
+                      <ChevronRight className="h-3 w-3" />
                     </Link>
                   </TableCell>
                   <TableCell>

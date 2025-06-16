@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTC Price Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .test-result { margin: 20px 0; padding: 15px; border-radius: 8px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        button { padding: 10px 20px; margin: 10px 5px; cursor: pointer; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🧪 BTC Price Browser Test</h1>
+    
+    <button onclick="clearCache()">Clear Cache</button>
+    <button onclick="testCoinGecko()">Test CoinGecko</button>
+    <button onclick="testHyperliquid()">Test Hyperliquid</button>
+    <button onclick="testBTCService()">Test BTC Service</button>
+    
+    <div id="results"></div>
+
+    <script>
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${message}`;
+            results.appendChild(div);
+            console.log(message);
+        }
+
+        function clearCache() {
+            localStorage.clear();
+            sessionStorage.clear();
+            log('✅ Cache cleared', 'success');
+        }
+
+        async function testCoinGecko() {
+            log('🔄 Testing CoinGecko API...', 'info');
+            try {
+                const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true');
+                
+                log(`📡 Response status: ${response.status}`, 'info');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`✅ BTC Price: $${data.bitcoin.usd.toLocaleString()}`, 'success');
+                    log(`📊 24h Change: ${data.bitcoin.usd_24h_change.toFixed(2)}%`, 'info');
+                    log(`<pre>${JSON.stringify(data, null, 2)}</pre>`, 'info');
+                } else {
+                    log(`❌ API failed with status ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testHyperliquid() {
+            log('🔄 Testing Hyperliquid API...', 'info');
+            try {
+                const response = await fetch('https://api.hyperliquid.xyz/info', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        type: 'l2Book',
+                        coin: 'BTC'
+                    })
+                });
+                
+                log(`📡 Response status: ${response.status}`, 'info');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const bestBid = parseFloat(data.levels[0][0].px);
+                    const bestAsk = parseFloat(data.levels[1][0].px);
+                    const midPrice = (bestBid + bestAsk) / 2;
+                    
+                    log(`✅ Mid Price: $${midPrice.toLocaleString()}`, 'success');
+                    log(`📊 Bid: $${bestBid.toLocaleString()}, Ask: $${bestAsk.toLocaleString()}`, 'info');
+                } else {
+                    log(`❌ API failed with status ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testBTCService() {
+            log('🔄 Testing BTC Service (if available)...', 'info');
+            
+            // Check if the service is available
+            if (typeof window.getBTCPriceData !== 'undefined') {
+                try {
+                    const priceData = await window.getBTCPriceData();
+                    log(`✅ Service Price: $${priceData.price.toLocaleString()}`, 'success');
+                    log(`📊 Source: ${priceData.source}`, 'info');
+                    log(`<pre>${JSON.stringify(priceData, null, 2)}</pre>`, 'info');
+                } catch (error) {
+                    log(`❌ Service Error: ${error.message}`, 'error');
+                }
+            } else {
+                log('⚠️ BTC Service not available on window object', 'error');
+                log('💡 Try importing it in your app', 'info');
+            }
+        }
+
+        // Auto-run environment check
+        window.addEventListener('load', () => {
+            log('🚀 Browser test loaded', 'success');
+            log(`🌐 User Agent: ${navigator.userAgent}`, 'info');
+            log(`💾 LocalStorage available: ${typeof localStorage !== 'undefined'}`, 'info');
+            log(`🔗 Fetch available: ${typeof fetch !== 'undefined'}`, 'info');
+            log(`🌍 Origin: ${window.location.origin}`, 'info');
+        });
+    </script>
+</body>
+</html> 

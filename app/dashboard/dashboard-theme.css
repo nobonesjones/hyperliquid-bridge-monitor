@@ -1,0 +1,131 @@
+/* Dashboard-specific theme */
+/* Dark mode dashboard theme */
+.dark .dashboard-theme {
+  /* Dashboard mode HSL values - softer than jet black */
+  --background: 220 10% 10%; /* Dark navy/gray instead of pure black */
+  --background-secondary: 220 10% 15%; /* Slightly lighter */
+  --background-tertiary: 220 10% 20%; /* Even lighter for tertiary elements */
+  
+  --foreground: 0 0% 100%;
+  --foreground-muted: 220 5% 75%;
+  --foreground-subtle: 220 5% 60%;
+  
+  --border: 220 10% 20%;
+  --border-strong: 220 10% 30%;
+  
+  --input: 220 10% 20%;
+  
+  --ring: 0 0% 100%;
+  
+  --primary: 0 0% 100%;
+  --primary-foreground: 220 10% 10%;
+  
+  --secondary: 220 10% 15%;
+  --secondary-foreground: 0 0% 100%;
+  
+  /* Keep the same accent colors */
+  --success: 142 62% 57%;
+  --success-foreground: 0 0% 100%;
+  --success-muted: 142 62% 57% / 0.15;
+  
+  --destructive: 0 100% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --destructive-muted: 0 100% 50% / 0.15;
+  
+  --info: 212 100% 65%;
+  --info-foreground: 0 0% 100%;
+  --info-muted: 212 100% 65% / 0.15;
+  
+  --warning: 45 100% 51%;
+  --warning-foreground: 0 0% 100%;
+  --warning-muted: 45 100% 51% / 0.15;
+  
+  --muted: 220 10% 15%;
+  --muted-foreground: 220 5% 75%;
+  
+  --accent: 220 10% 15%;
+  --accent-foreground: 0 0% 100%;
+  
+  --popover: 220 10% 10%;
+  --popover-foreground: 0 0% 100%;
+  
+  --card: 220 10% 15%;
+  --card-foreground: 0 0% 100%;
+  --card-secondary: 220 10% 20%;
+}
+
+/* Light mode dashboard theme */
+.dashboard-theme:not(.dark) {
+  /* Light dashboard mode HSL values */
+  --background: 220 20% 97%; /* Light gray with slight blue tint */
+  --background-secondary: 220 20% 93%; /* Slightly darker */
+  --background-tertiary: 220 20% 90%; /* Even darker for tertiary elements */
+  
+  --foreground: 220 20% 10%; /* Dark text for light mode */
+  --foreground-muted: 220 10% 40%;
+  --foreground-subtle: 220 10% 60%;
+  
+  --border: 220 20% 85%;
+  --border-strong: 220 20% 75%;
+  
+  --input: 220 20% 85%;
+  
+  --ring: 220 20% 10%;
+  
+  --primary: 220 20% 10%;
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 220 20% 93%;
+  --secondary-foreground: 220 20% 10%;
+  
+  /* Adjusted accent colors for light mode */
+  --success: 142 62% 47%;
+  --success-foreground: 0 0% 100%;
+  --success-muted: 142 62% 47% / 0.1;
+  
+  --destructive: 0 100% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --destructive-muted: 0 100% 45% / 0.1;
+  
+  --info: 212 100% 55%;
+  --info-foreground: 0 0% 100%;
+  --info-muted: 212 100% 55% / 0.1;
+  
+  --warning: 45 100% 45%;
+  --warning-foreground: 0 0% 100%;
+  --warning-muted: 45 100% 45% / 0.1;
+  
+  --muted: 220 20% 93%;
+  --muted-foreground: 220 10% 40%;
+  
+  --accent: 220 20% 93%;
+  --accent-foreground: 220 20% 10%;
+  
+  --popover: 220 20% 97%;
+  --popover-foreground: 220 20% 10%;
+  
+  --card: 220 20% 97%;
+  --card-foreground: 220 20% 10%;
+  --card-secondary: 220 20% 93%;
+}
+
+/* Additional specific styles for wallet addresses and titles */
+.dashboard-theme:not(.dark) h1,
+.dashboard-theme:not(.dark) h2,
+.dashboard-theme:not(.dark) h3,
+.dashboard-theme:not(.dark) h4,
+.dashboard-theme:not(.dark) h5,
+.dashboard-theme:not(.dark) h6,
+.dashboard-theme:not(.dark) .wallet-address,
+.dashboard-theme:not(.dark) .wallet-name,
+.dashboard-theme:not(.dark) .title,
+.dashboard-theme:not(.dark) .stat-title,
+.dashboard-theme:not(.dark) .stat-value {
+  color: hsl(220 20% 10%); /* Ensure dark text in light mode */
+}
+
+/* Force text color for specific elements that might have hardcoded colors */
+.dashboard-theme:not(.dark) * {
+  --text-primary: hsl(220 20% 10%);
+  --text-secondary: hsl(220 10% 40%);
+}

@@ -19,7 +19,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: themeConfig.font.sans.split(','),
+        'sf-pro': ['-apple-system', 'SF Pro Display', 'SF Pro Text', 'system-ui', 'sans-serif'],
+        sans: ['-apple-system', 'SF Pro Display', 'SF Pro Text', 'system-ui', 'sans-serif'],
         mono: themeConfig.font.mono.split(','),
       },
       colors: {

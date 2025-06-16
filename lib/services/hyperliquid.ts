@@ -252,6 +252,8 @@ interface Position {
   side: 'long' | 'short';
   sizeUSD: number;
   health: number; // 0-100, higher is better
+  openedAt?: number; // timestamp when position was opened
+  ageInMs?: number; // calculated age in milliseconds
 }
 
 interface AssetContext {
@@ -259,6 +261,13 @@ interface AssetContext {
   funding: number;
   openInterest: number;
   dayVolume: number;
+}
+
+interface PortfolioData {
+  day: { accountValueHistory: [number, string][], pnlHistory: [number, string][] };
+  week: { accountValueHistory: [number, string][], pnlHistory: [number, string][] };
+  month: { accountValueHistory: [number, string][], pnlHistory: [number, string][] };
+  allTime: { accountValueHistory: [number, string][], pnlHistory: [number, string][] };
 }
 
 interface WalletData {
@@ -270,6 +279,7 @@ interface WalletData {
   freeMargin: number;
   portfolioDelta: number; // Positive means net long, negative means net short
   allTimePnl: number;
+  portfolioHistory?: PortfolioData;
 }
 
 interface Position {
@@ -385,26 +395,54 @@ export class HyperliquidAPI {
         ])
       );
 
-      // Then get the user's positions
-      const response = await axios.post(HYPERLIQUID_API_URL, {
-        type: "clearinghouseState",
-        user: address
-      });
-
-      // Get user trade history for all-time PnL
-      const tradeHistoryResponse = await axios.post(HYPERLIQUID_API_URL, {
-        type: "userFills",
-        user: address,
-        startTime: 0, // 0 means from the beginning
-        endTime: Date.now()
-      });
+      // Get the user's positions, portfolio history, and trade history in parallel
+      // Use a longer time range for trade history to catch older positions
+      const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+      const [response, portfolioResponse, tradeHistoryResponse] = await Promise.all([
+        axios.post(HYPERLIQUID_API_URL, {
+          type: "clearinghouseState",
+          user: address
+        }),
+        axios.post(HYPERLIQUID_API_URL, {
+          type: "portfolio",
+          user: address
+        }),
+        axios.post(HYPERLIQUID_API_URL, {
+          type: "userFills",
+          user: address,
+          startTime: thirtyDaysAgo,
+          endTime: Date.now()
+        })
+      ]);
 
       // Calculate all-time realized PnL from trade history
       const allTimePnl = this.calculateAllTimePnl(tradeHistoryResponse.data);
 
-      // Log the response for debugging
-      console.log('API Response:', response.data);
-      console.log('Trade History Response:', tradeHistoryResponse.data);
+      // Parse portfolio history data
+      const portfolioHistory: PortfolioData | undefined = portfolioResponse.data ? {
+        day: this.parsePortfolioTimeframe(portfolioResponse.data, 'day'),
+        week: this.parsePortfolioTimeframe(portfolioResponse.data, 'week'), 
+        month: this.parsePortfolioTimeframe(portfolioResponse.data, 'month'),
+        allTime: this.parsePortfolioTimeframe(portfolioResponse.data, 'allTime')
+      } : undefined;
+
+      // Log the response for debugging (only in development)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('API Response:', response.data);
+        console.log('Margin Summary:', response.data?.marginSummary);
+        console.log('Portfolio History:', portfolioHistory);
+        console.log('Trade History Length:', tradeHistoryResponse.data?.length || 0);
+        console.log('Trade History Sample:', tradeHistoryResponse.data?.slice(0, 3));
+        
+        // Log position data for debugging
+        if (response.data?.assetPositions) {
+          console.log('Asset Positions:', response.data.assetPositions.map((pos: any) => ({
+            coin: pos.position.coin,
+            size: pos.position.szi,
+            entryPrice: pos.position.entryPx
+          })));
+        }
+      }
 
       const positions = (response.data?.assetPositions || []).map((pos: any) => {
         const position = pos.position;
@@ -417,6 +455,11 @@ export class HyperliquidAPI {
           parseFloat(position.leverage.value) : 
           parseFloat(position.leverage || "1");
 
+        // Get position opening time and calculate age
+        const openedAt = this.getPositionOpenTime(position.coin, tradeHistoryResponse.data, sz);
+        const currentTime = Date.now();
+        const ageInMs = openedAt ? currentTime - openedAt : undefined;
+
         return {
           coin: position.coin,
           position: sz,
@@ -425,26 +468,37 @@ export class HyperliquidAPI {
           leverage: leverageValue,
           liquidationPrice: liquidationPrice,
           margin: parseFloat(position.marginUsed) || 0,
-          positionValue: parseFloat(position.positionValue) || 0,
+          positionValue: parseFloat(position.positionValue) || Math.abs(sz * markPrice),
           returnOnEquity: parseFloat(position.returnOnEquity) || 0,
           maxLeverage: parseFloat(position.maxLeverage) || 0,
           cumFunding: {
-            allTime: parseFloat(position.cumFunding.allTime) || 0,
-            sinceChange: parseFloat(position.cumFunding.sinceChange) || 0,
-            sinceOpen: parseFloat(position.cumFunding.sinceOpen) || 0
+            allTime: parseFloat(position.cumFunding?.allTime) || 0,
+            sinceChange: parseFloat(position.cumFunding?.sinceChange) || 0,
+            sinceOpen: parseFloat(position.cumFunding?.sinceOpen) || 0
           },
           currentFunding: assetCtx?.funding || 0,
           markPrice: markPrice,
           side: sz > 0 ? 'long' : 'short',
           sizeUSD: Math.abs(sz * markPrice),
-          health: this.calculatePositionHealth(sz, px, markPrice, liquidationPrice)
+          health: this.calculatePositionHealth(sz, px, markPrice, liquidationPrice),
+          openedAt: openedAt,
+          ageInMs: ageInMs
         };
       });
 
       const totalUnrealizedPnl = positions.reduce((sum: number, pos: Position) => sum + pos.unrealizedPnl, 0);
-      const totalValue = positions.reduce((sum: number, pos: Position) => sum + Math.abs(pos.positionValue), 0);
-      const marginUsed = positions.reduce((sum: number, pos: Position) => sum + pos.margin, 0);
-      const freeMargin = parseFloat(response.data?.marginSummary?.accountValue || "0") - marginUsed;
+      
+      // Get the actual account value and margin data from the API response
+      const marginSummary = response.data?.marginSummary || {};
+      const accountValue = parseFloat(marginSummary.accountValue || "0");
+      const marginUsed = parseFloat(marginSummary.totalMarginUsed || "0");
+      const totalNtlPos = parseFloat(marginSummary.totalNtlPos || "0");
+      const withdrawable = parseFloat(response.data?.withdrawable || "0");
+      
+      // Total value should be account value (equity)
+      const totalValue = accountValue;
+      // Free margin is withdrawable amount
+      const freeMargin = withdrawable;
       
       // Calculate portfolio delta (sum of position values, keeping sign)
       const portfolioDelta = positions.reduce((sum: number, pos: Position) => {
@@ -459,7 +513,8 @@ export class HyperliquidAPI {
         marginUsed,
         freeMargin,
         portfolioDelta,
-        allTimePnl
+        allTimePnl,
+        portfolioHistory
       };
     } catch (error) {
       console.error('Error fetching wallet positions:', error);
@@ -467,6 +522,23 @@ export class HyperliquidAPI {
         console.error('Response data:', error.response?.data);
       }
       throw error;
+    }
+  }
+
+  private parsePortfolioTimeframe(portfolioData: any[], timeframe: string) {
+    try {
+      const timeframeData = portfolioData.find(([period]) => period === timeframe);
+      if (!timeframeData || !timeframeData[1]) {
+        return { accountValueHistory: [], pnlHistory: [] };
+      }
+      
+      return {
+        accountValueHistory: timeframeData[1].accountValueHistory || [],
+        pnlHistory: timeframeData[1].pnlHistory || []
+      };
+    } catch (error) {
+      console.error(`Error parsing ${timeframe} portfolio data:`, error);
+      return { accountValueHistory: [], pnlHistory: [] };
     }
   }
 
@@ -484,6 +556,69 @@ export class HyperliquidAPI {
     } catch (error) {
       console.error('Error calculating all-time PnL:', error);
       return 0;
+    }
+  }
+
+  private getPositionOpenTime(coin: string, tradeHistory: any[], currentPositionSize: number): number | undefined {
+    if (!tradeHistory || !Array.isArray(tradeHistory) || tradeHistory.length === 0) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`No trade history available for ${coin}`);
+      }
+      return undefined;
+    }
+
+    try {
+      // Sort trades by timestamp to find the most recent position opening
+      const coinTrades = tradeHistory
+        .filter(trade => trade.coin === coin)
+        .sort((a, b) => b.time - a.time); // Sort descending (newest first)
+
+      if (coinTrades.length === 0) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`No trades found for ${coin} in trade history`);
+        }
+        return undefined;
+      }
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Found ${coinTrades.length} trades for ${coin}, current position size: ${currentPositionSize}`);
+        console.log(`Recent trades for ${coin}:`, coinTrades.slice(0, 3).map(t => ({
+          side: t.side,
+          size: t.sz,
+          time: new Date(t.time).toISOString(),
+          timestamp: t.time
+        })));
+      }
+
+      // Simple approach: find the most recent trade that would have opened or added to the current position
+      // If we have a long position, find the most recent buy
+      // If we have a short position, find the most recent sell
+      const isLongPosition = currentPositionSize > 0;
+      const targetSide = isLongPosition ? 'B' : 'A'; // B = Buy, A = Sell
+      
+      // Find the most recent trade in the same direction as current position
+      const relevantTrade = coinTrades.find(trade => trade.side === targetSide);
+      
+      if (relevantTrade) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Using most recent ${targetSide === 'B' ? 'buy' : 'sell'} trade for ${coin} position opening: ${new Date(relevantTrade.time).toISOString()}`);
+        }
+        return relevantTrade.time;
+      }
+
+      // Fallback: use the most recent trade regardless of side
+      if (coinTrades.length > 0) {
+        const fallbackTime = coinTrades[0].time;
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Using most recent trade as fallback for ${coin}: ${new Date(fallbackTime).toISOString()}`);
+        }
+        return fallbackTime;
+      }
+
+      return undefined;
+    } catch (error) {
+      console.error(`Error getting position open time for ${coin}:`, error);
+      return undefined;
     }
   }
 }
